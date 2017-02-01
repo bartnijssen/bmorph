@@ -207,3 +207,61 @@ def bmorph_correct(raw_ts, bmorph_ts, correction_window,
     bmorph_corrected_ts = correction_ts * bmorph_ts[correction_window]
 
     return bmorph_corrected_ts
+
+
+def bmorph_correct_medium_range(raw_ts, bmorph_ts, correction_window,
+                                truth_mean, train_mean, nsmooth):
+    '''Correct bmorphed values by applying a daily varying correction
+
+    Apply a correction to bmorphed values to preserve the mean change by day
+    over a `correction_window`. This is similar to the correction applied in
+    `bmorph_correct` except that this is a daily varying change (rather than
+    a global one)
+
+    Parameters
+    ----------
+    raw_ts :    pandas.series
+        Series of raw values that have not been bmorphed
+    bmorph_ts : Bmorphed version of `raw_ts`
+        Series of bmorphed values
+    correction_window : slice
+        Slice of `raw_ts` and `bmorph_ts` over which the correction is applied
+    truth_mean : float
+        Mean of target time series (`truth_ts`) for the base period
+    train_mean : float
+        Mean of training time series (`train_ts`) for the base period
+    nsmooth : int
+        Number of elements that will be smoothed in `raw_ts` and `bmorph_ts`.
+        The nsmooth value in this case is typically much larger than the one
+        used for the bmorph function itself. For example, 365 days.
+
+    Returns
+    -------
+    bmorph_corrected_ts : pandas.Series
+       Corrected series of length `correction_window`.
+
+    '''
+    # Type checking
+    assert isinstance(raw_ts, pd.Series)
+    assert isinstance(bmorph_ts, pd.Series)
+    assert isinstance(correction_window, slice)
+
+    # Smooth the raw and bmorphed time series
+    raw_ts_smoothed = raw_ts.rolling(window=nsmooth, min_periods=1,
+                                     center=True).mean()
+    bmorph_ts_smoothed = bmorph_ts.rolling(window=nsmooth, min_periods=1,
+                                           center=True).mean()
+
+    # Calculate a ratio. In this case this results in a series indexed by
+    # day of year
+    ratio = truth_mean/train_mean
+
+    # Calculate the correction factors
+    correction_ts = raw_ts_smoothed[correction_window] / \
+        bmorph_ts_smoothed[correction_window] * \
+        ratio[raw_ts_smoothed[correction_window].index.dayofyear].values
+
+    # Apply the correction to the bmorph time series
+    bmorph_corrected_ts = correction_ts * bmorph_ts[correction_window]
+
+    return bmorph_corrected_ts

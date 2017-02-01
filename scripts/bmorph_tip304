@@ -115,6 +115,8 @@ def parse_config_file(config_file):
 
     # convert the entries that need to be ints
     config['bmorph']['n_smooth_short'] = cfg.getint('bmorph', 'n_smooth_short')
+    config['bmorph']['n_smooth_medium'] = cfg.getint('bmorph',
+                                                     'n_smooth_medium')
     config['bmorph']['n_smooth_long'] = cfg.getint('bmorph', 'n_smooth_long')
     config['bmorph']['cdf_half_period'] = \
         cfg.getint('bmorph', 'cdf_half_period')
@@ -218,12 +220,35 @@ def process_single_file(sitedata, io_info, bmorph_info):
                                            nrni_ts, train_ts, training_window,
                                            bmorph_info['n_smooth_short']))
 
-    # Apply the correction
+    # Apply the medium-term correction. In this case the correction is very
+    # similar to what we do for the long-term correction, except that we
+    # calculate a correction by day of year (after using a smmoother of
+    # window size n_smooth_medium on the nrni and training time series).
+
+    # Calculate the mean daily flow for the `reference_window` after applying
+    # a smoother
+    nrni_mean = nrni_ts[reference_window].rolling(
+        window=bmorph_info['n_smooth_medium'], min_periods=1,
+        center=True).mean().groupby(
+        nrni_ts[reference_window].index.dayofyear).mean()
+    train_mean = train_ts[reference_window].rolling(
+        window=bmorph_info['n_smooth_medium'], min_periods=1,
+        center=True).mean().groupby(
+        train_ts[reference_window].index.dayofyear).mean()
+
+    # Use the mean annual cycles to apply a correction to `bmorph_ts`
+    bmorph_corr_ts_medium = bmorph.bmorph_correct_medium_range(
+        raw_ts, bmorph_ts, raw_ts_window,
+        nrni_mean, train_mean,
+        bmorph_info['n_smooth_medium'])
+
+    # Apply the long-term correction
     nrni_mean = nrni_ts[reference_window].mean()
     train_mean = train_ts[reference_window].mean()
-    bmorph_corr_ts = bmorph.bmorph_correct(raw_ts, bmorph_ts, raw_ts_window,
-                                           nrni_mean, train_mean,
-                                           bmorph_info['n_smooth_long'])
+    bmorph_corr_ts = bmorph.bmorph_correct(
+        raw_ts, bmorph_corr_ts_medium, raw_ts_window,
+        nrni_mean, train_mean,
+        bmorph_info['n_smooth_long'])
 
     # Write the new time series to file
     outfile = tip304.construct_file_name(sitedata,
